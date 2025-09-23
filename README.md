@@ -22,3 +22,5 @@ This project predicts the modal price of agricultural commodities using machine 
 - Production-ready code structure
 
 ## Installation and Usage
+- Open prediction_using_model.py
+- Run it
