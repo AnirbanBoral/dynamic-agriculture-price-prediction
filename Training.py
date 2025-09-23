@@ -14,7 +14,7 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib
 
-dataset = pd.read_csv("C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Data/ProjectData3.csv")
+dataset = pd.read_csv("Data/ProjectData3.csv")
 
 print(f"Dataset shape: {dataset.shape}")
 print(f"Columns: {list(dataset.columns)}")
@@ -76,7 +76,7 @@ plt.title('Linear Regression: Actual vs Predicted Agricultural Prices', fontsize
 min_val = min(min(y_test), min(y_pred))
 max_val = max(max(y_test), max(y_pred))
 plt.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction Line')
-plt.savefig('C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Outputs/agricultural_price_predictionL.png', dpi=300, bbox_inches='tight')
+plt.savefig('Outputs/agricultural_price_predictionL.png', dpi=300, bbox_inches='tight')
 
 # R2 score added to the plot
 plt.text(0.05, 0.95, f'R² = {r21:.4f}', transform=plt.gca().transAxes, 
@@ -121,7 +121,7 @@ plt.ylabel('Predicted Price', fontsize=12)
 plt.title('XGBoost: Actual vs Predicted Agricultural Prices', fontsize=14, fontweight='bold')
 
 plt.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction Line')
-plt.savefig('C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Outputs/agricultural_price_predictionX.png', dpi=300, bbox_inches='tight')
+plt.savefig('Outputs/agricultural_price_predictionX.png', dpi=300, bbox_inches='tight')
 
 # Add R² score to the plot
 plt.text(0.05, 0.95, f'R² = {r22:.4f}', transform=plt.gca().transAxes, 
@@ -146,8 +146,8 @@ model_data2 = {
     'numeric_cols': ['Year', 'Month', 'Day', 'Commodity_Code', 'Min_Price', 'Max_Price']
 }
 # Save the models
-joblib.dump(model_data2, "C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Models/agri_modelL.joblib")
-joblib.dump(model_data1, "C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Models/agri_modelX.joblib") 
+joblib.dump(model_data2, "Models/agri_modelL.joblib")
+joblib.dump(model_data1, "Models/agri_modelX.joblib") 
 #For big model size, we can add another argument "compress=3" to lower the size, but that makes the loading slower
 
 

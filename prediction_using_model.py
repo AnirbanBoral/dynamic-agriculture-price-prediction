@@ -9,8 +9,8 @@ import joblib
 import pandas as pd
 import numpy as np
 
-model1_data=joblib.load("C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Models/agri_modelX.joblib")
-model2_data=joblib.load("C:/Users/Anirban Boral/Desktop/Sem 3/CSET211- Statistical Machine Learning/Project/Models/agri_modelL.joblib")
+model1_data=joblib.load("Models/agri_modelX.joblib")
+model2_data=joblib.load("Models/agri_modelL.joblib")
 
 def predict_single_price(model_data, state, district, market, commodity, variety, grade, year, month, day, commodity_code, min_price, max_price):
     model=model_data["model"]
