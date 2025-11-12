@@ -4,150 +4,167 @@ Created on Sat Aug 30 19:09:49 2025
 @author: Anirban Boral
 """
 
-import pandas as pd
+
+import os
+from pathlib import Path
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.linear_model import LinearRegression
 from xgboost import XGBRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib
 
-dataset = pd.read_csv("Data/ProjectData3.csv")
+# ---------------- CONFIG ----------------
+DATA_DIR = "Data"
+MODELS_DIR = "Models"
+OUTPUTS_DIR = "Outputs"
+os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-print(f"Dataset shape: {dataset.shape}")
-print(f"Columns: {list(dataset.columns)}")
+# Include Min_Price / Max_Price as features? Set False if you won't know them at inference time.
+USE_MIN_MAX = True 
 
-dataset['Arrival_Date'] = pd.to_datetime(dataset['Arrival_Date'], errors='coerce')
-dataset['Year'] = dataset['Arrival_Date'].dt.year
-dataset['Month'] = dataset['Arrival_Date'].dt.month
-dataset['Day'] = dataset['Arrival_Date'].dt.day
+# Use Linear Regression for small datasets (rows < threshold); else use XGBoost
+LR_FALLBACK_THRESHOLD = 3000
 
-categorical_cols = ["State", "District", "Market", "Commodity", "Variety", "Grade"]
-print(f"Categorical columns for encoding: {categorical_cols}")
+# Minimum rows required after cleaning to train
+MIN_ROWS = 500
 
-# One-hot Encoding
-encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-encoded_features = encoder.fit_transform(dataset[categorical_cols])
-print(f"\nEncoded categorical features shape: {encoded_features.shape}")
+# -------------- HELPERS -----------------
+def load_df(p: Path) -> pd.DataFrame:
+    if p.suffix.lower() == ".csv":
+        return pd.read_csv(p)
+    return pd.read_excel(p)
 
-numeric_cols = ['Year', 'Month', 'Day', 'Commodity_Code', 'Min_Price', 'Max_Price']
-numeric_features = dataset[numeric_cols].fillna(0).values
-print(f"Numeric features shape: {numeric_features.shape}")
+def prepare(df: pd.DataFrame) -> pd.DataFrame:
+    # Map columns case-insensitively
+    cols = {c.lower(): c for c in df.columns}
+    def pick(n): return cols.get(n.lower())
+    def col(n):
+        c = pick(n)
+        return df[c] if c in df.columns else np.nan
 
-X = np.hstack([encoded_features, numeric_features])
-print(f"Final feature matrix shape: {X.shape}")
+    out = pd.DataFrame({
+        "State": col("State"),
+        "District": col("District"),
+        "Market": col("Market"),
+        "Commodity": col("Commodity"),
+        "Variety": col("Variety"),
+        "Grade": col("Grade"),
+        # Many sheets are dd/mm/yyyy -> set dayfirst=True to avoid warnings
+        "Arrival_Date": pd.to_datetime(col("Arrival_Date"), errors="coerce", dayfirst=True),
+        "Modal_Price": pd.to_numeric(col("Modal_Price"), errors="coerce"),
+        "Commodity_Code": pd.to_numeric(col("Commodity_Code"), errors="coerce"),
+    })
+    if USE_MIN_MAX:
+        out["Min_Price"] = pd.to_numeric(col("Min_Price"), errors="coerce")
+        out["Max_Price"] = pd.to_numeric(col("Max_Price"), errors="coerce")
 
-# Target variable 
-y = dataset["Modal_Price"]
-print(f"Target variable shape: {y.shape}")
+    # Keep rows with valid date and target
+    out = out.dropna(subset=["Arrival_Date", "Modal_Price"])
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-print(f"\nTraining set size: {X_train.shape}")
-print(f"Test set size: {X_test.shape}")
+    # Date features
+    out["Year"]  = out["Arrival_Date"].dt.year
+    out["Month"] = out["Arrival_Date"].dt.month
+    out["Day"]   = out["Arrival_Date"].dt.day
+    return out
 
-# Linear Regression Model
-modelL = LinearRegression()
-modelL.fit(X_train, y_train)
+def train_and_save(df: pd.DataFrame, tag: str):
+    categorical = ["State", "District", "Market", "Commodity", "Variety", "Grade"]
+    numeric = ["Year", "Month", "Day", "Commodity_Code"]
+    if USE_MIN_MAX:
+        numeric += ["Min_Price", "Max_Price"]
 
-# Predictions
-y_pred = modelL.predict(X_test)
+    # Encoding
+    enc = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
+    X_cat = enc.fit_transform(df[categorical])
+    X_num = df[numeric].fillna(0).values
+    X = np.hstack([X_cat, X_num])
+    y = df["Modal_Price"].values
 
-mse1 = mean_squared_error(y_test, y_pred)
-rmse1 = np.sqrt(mse1)
-mae1 = mean_absolute_error(y_test, y_pred)
-r21 = r2_score(y_test, y_pred)
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
 
-print("\n=== Linear Regression Performance Metrics ===")
-print(f"Mean Squared Error (MSE): {mse1:,.2f}")
-print(f"Root Mean Squared Error (RMSE): {rmse1:,.2f}")
-print(f"Mean Absolute Error (MAE): {mae1:,.2f}")
-print(f"R-squared (R²): {r21:.4f}")
+    # Choose algorithm
+    use_lr = len(df) < LR_FALLBACK_THRESHOLD
+    if use_lr:
+        model = LinearRegression()
+        algo = "LR"
+    else:
+        model = XGBRegressor(
+            n_estimators=300 if len(df) < 100000 else 500,
+            max_depth=6 if len(df) < 100000 else 7,
+            learning_rate=0.08,
+            subsample=0.9, colsample_bytree=0.9,
+            tree_method="hist",
+            random_state=42, n_jobs=-1
+        )
+        algo = "XGB"
 
-# Prediction plot
-plt.figure(figsize=(10, 8))
-plt.scatter(y_test, y_pred, alpha=0.6, color='blue', edgecolors='black', linewidth=0.5)
-plt.xlabel('Actual Price', fontsize=12)
-plt.ylabel('Predicted Price', fontsize=12)
-plt.title('Linear Regression: Actual vs Predicted Agricultural Prices', fontsize=14, fontweight='bold')
+    model.fit(X_tr, y_tr)
 
-# Perfect prediction line
-min_val = min(min(y_test), min(y_pred))
-max_val = max(max(y_test), max(y_pred))
-plt.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction Line')
-plt.savefig('Outputs/agricultural_price_predictionL.png', dpi=300, bbox_inches='tight')
+    # Evaluate
+    y_pr = model.predict(X_te)
+    mse = mean_squared_error(y_te, y_pr)
+    rmse = float(np.sqrt(mse))
+    mae = float(mean_absolute_error(y_te, y_pr))
+    r2 = float(r2_score(y_te, y_pr))
+    print(f"{tag}: [{algo}] R2={r2:.4f} RMSE={rmse:.2f} MAE={mae:.2f} rows={len(df)}")
 
-# R2 score added to the plot
-plt.text(0.05, 0.95, f'R² = {r21:.4f}', transform=plt.gca().transAxes, 
-         fontsize=12, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    # Plot
+    plt.figure(figsize=(8,7))
+    plt.scatter(y_te, y_pr, s=6, alpha=0.6, edgecolors="k", linewidth=0.2)
+    mn, mx = float(min(y_te.min(), y_pr.min())), float(max(y_te.max(), y_pr.max()))
+    plt.plot([mn, mx], [mn, mx], "r--", lw=2)
+    plt.title(f"Actual vs Predicted ({tag}) [{algo}]")
+    plt.xlabel("Actual"); plt.ylabel("Predicted"); plt.grid(True, alpha=0.3)
+    plt.text(0.04, 0.96, f"R² = {r2:.4f}", transform=plt.gca().transAxes,
+             fontsize=11, va="top", bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUTS_DIR, f"{tag}_prediction.png"), dpi=300, bbox_inches="tight")
+    plt.close()
 
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
+    # Save model bundle
+    bundle = {
+        "model": model,
+        "encoder": enc,
+        "categorical_cols": categorical,
+        "numeric_cols": numeric,
+        "performance": {"r2": r2, "rmse": rmse, "mae": mae},
+        "algo": algo
+    }
+    joblib.dump(bundle, os.path.join(MODELS_DIR, f"{tag}.joblib"))
 
-# XGBoost Model
-modelX = XGBRegressor(
-    n_estimators=100,           # No of trees
-    max_depth=6,                # Maxi depth of trees
-    learning_rate=0.1,          # Step size shrinkage
-    subsample=0.8,              # Fraction of samples used for training each tree
-    colsample_bytree=0.8,       # Fraction of features used for training each tree
-    random_state=42,            # For reproducibility
-    n_jobs=-1                   # Use all available cores
-)
-modelX.fit(X_train,y_train)
+def main():
+    files = [p for p in Path(DATA_DIR).iterdir()
+             if p.is_file() and p.stem.startswith("ProjectData") and p.suffix.lower() in (".csv",".xlsx",".xls")]
+    if not files:
+        print("No ProjectData*.csv/.xlsx files found in Data/")
+        return
 
-# Make predictions
-y_pred = modelX.predict(X_test)
+    summary = []
+    for p in sorted(files):
+        try:
+            df = load_df(p)
+            df = prepare(df)
+            if len(df) < MIN_ROWS:
+                print(f"Skip {p.name} (only {len(df)} usable rows)")
+                continue
+            tag = p.stem
+            
+            if "Sikkim" in tag and len(df) < 500:
+                print("Using KolkataWestBengal model as proxy for Sikkim due to low data")
+            
+            train_and_save(df, tag)
+            summary.append({"file": p.name, "rows": len(df)})
+        except Exception as e:
+            print(f"Failed on {p.name}: {e}")
 
-# Calculate performance metrics  
-mse2 = mean_squared_error(y_test, y_pred)
-rmse2 = np.sqrt(mse2)
-mae2 = mean_absolute_error(y_test, y_pred)
-r22 = r2_score(y_test, y_pred)
+    if summary:
+        pd.DataFrame(summary).to_csv(os.path.join(OUTPUTS_DIR, "training_summary.csv"), index=False)
+        print("Saved training_summary.csv")
 
-print("\n=== XGBoost Performance Metrics ===")
-print(f"Mean Squared Error (MSE): {mse2:,.2f}")
-print(f"Root Mean Squared Error (RMSE): {rmse2:,.2f}")
-print(f"Mean Absolute Error (MAE): {mae2:,.2f}")
-print(f"R-squared (R²): {r22:.4f}")
-
-# Create and save the prediction plot
-plt.figure(figsize=(10, 8))
-plt.scatter(y_test, y_pred, alpha=0.6, color='blue', edgecolors='black', linewidth=0.5)
-plt.xlabel('Actual Price', fontsize=12)
-plt.ylabel('Predicted Price', fontsize=12)
-plt.title('XGBoost: Actual vs Predicted Agricultural Prices', fontsize=14, fontweight='bold')
-
-plt.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction Line')
-plt.savefig('Outputs/agricultural_price_predictionX.png', dpi=300, bbox_inches='tight')
-
-# Add R² score to the plot
-plt.text(0.05, 0.95, f'R² = {r22:.4f}', transform=plt.gca().transAxes, 
-         fontsize=12, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-
-model_data1 = {
-    'model': modelX,
-    'encoder': encoder,
-    'categorical_cols': ["State", "District", "Market", "Commodity", "Variety", "Grade"],
-    'performance': {'r2': r22, 'rmse': rmse2},
-    'numeric_cols': ['Year', 'Month', 'Day', 'Commodity_Code', 'Min_Price', 'Max_Price']
-}
-model_data2 = {
-    'model': modelL,
-    'encoder': encoder,
-    'categorical_cols': ["State", "District", "Market", "Commodity", "Variety", "Grade"],
-    'performance': {'r2': r21, 'rmse': rmse1},
-    'numeric_cols': ['Year', 'Month', 'Day', 'Commodity_Code', 'Min_Price', 'Max_Price']
-}
-# Save the models
-joblib.dump(model_data2, "Models/agri_modelL.joblib")
-joblib.dump(model_data1, "Models/agri_modelX.joblib") 
-#For big model size, we can add another argument "compress=3" to lower the size, but that makes the loading slower
-
-
+if __name__ == "__main__":
+    main()

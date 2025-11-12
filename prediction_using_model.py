@@ -8,67 +8,60 @@ Created on Tue Sep 23 19:03:42 2025
 import joblib
 import pandas as pd
 import numpy as np
+import os
+# 1) Put the helper near the top
+def load_model_for_region(state: str, district: str):
+    """
+    Returns the appropriate trained model bundle (.joblib).
+    Routes Sikkim to a proxy (Kolkata, West Bengal) due to low data.
+    """
+    state = (state or "").replace(" ", "")
+    district = (district or "").replace(" ", "")
 
-model1_data=joblib.load("Models/agri_modelX.joblib")
-model2_data=joblib.load("Models/agri_modelL.joblib")
+    if state.lower() == "sikkim":
+        return joblib.load("Models/ProjectDataKolkataWestBengal.joblib")
 
-def predict_single_price(model_data, state, district, market, commodity, variety, grade, year, month, day, commodity_code, min_price, max_price):
-    model=model_data["model"]
-    encoder=model_data["encoder"]
-    new_data = pd.DataFrame({
-        'State': [state],
-        'District': [district], 
-        'Market': [market],
-        'Commodity': [commodity],
-        'Variety': [variety],
-        'Grade': [grade],
-        'Year': [year],
-        'Month': [month], 
-        'Day': [day],
-        'Commodity_Code': [commodity_code],
-        'Min_Price': [min_price],
-        'Max_Price': [max_price]
-    })
-    
-    categorical_cols = ["State", "District", "Market", "Commodity", "Variety", "Grade"]
-    numeric_cols = ['Year', 'Month', 'Day', 'Commodity_Code', 'Min_Price', 'Max_Price']
-    
-    encoded_features = encoder.transform(new_data[categorical_cols])
-    numeric_features = new_data[numeric_cols].values
-    X_new = np.hstack([encoded_features, numeric_features])
-    predicted_price = model.predict(X_new)[0]
-    return predicted_price
+    tag = f"ProjectData{district}{state}"
+    path = os.path.join("Models", f"{tag}.joblib")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Model not found: {path}")
+    return joblib.load(path)
 
-predicted_priceX = predict_single_price(
-    model_data=model1_data,
-    state='Maharashtra',
-    district='Nashik', 
-    market='APMC Nashik',
-    commodity='Onion',
-    variety='Local',
-    grade='Grade I',
-    year=2025,
-    month=10,
-    day=25,
-    commodity_code=100,
-    min_price=1500,
-    max_price=2500
-)
-predicted_priceL = predict_single_price(
-    model_data=model2_data,
-    state='Maharashtra',
-    district='Nashik', 
-    market='APMC Nashik',
-    commodity='Onion',
-    variety='Local',
-    grade='Grade I',
-    year=2025,
-    month=10,
-    day=25,
-    commodity_code=100,
-    min_price=1500,
-    max_price=2500
-)
+# 2) Simple predict function using the loaded bundle
+def predict_modal_price(state, district, market, commodity, variety, grade,
+                        year, month, day, commodity_code, min_price=None, max_price=None):
+    bundle = load_model_for_region(state, district)
+    model = bundle["model"]
+    enc = bundle["encoder"]
+    categorical_cols = bundle["categorical_cols"]
+    numeric_cols = bundle["numeric_cols"]
 
-print(f"Predicted XGBoost Price: {predicted_priceX:,.0f}")
-print(f"Predicted Linear Regression Price: {predicted_priceL:,.0f}")
+    # Build one-row DataFrame in the same order/columns
+    row = {
+        "State": state, "District": district, "Market": market,
+        "Commodity": commodity, "Variety": variety, "Grade": grade,
+        "Year": year, "Month": month, "Day": day,
+        "Commodity_Code": commodity_code
+    }
+    if "Min_Price" in numeric_cols:
+        row["Min_Price"] = min_price or 0
+    if "Max_Price" in numeric_cols:
+        row["Max_Price"] = max_price or 0
+
+    df = pd.DataFrame([row])
+    X_cat = enc.transform(df[categorical_cols])
+    X_num = df[numeric_cols].fillna(0).values
+    X = np.hstack([X_cat, X_num])
+
+    pred = model.predict(X)[0]
+    return float(pred)
+
+# 3) Example usage
+if __name__ == "__main__":
+    price = predict_modal_price(
+        state="Sikkim", district="East Sikkim", market="Gangtok",
+        commodity="Onion", variety="Local", grade="Grade I",
+        year=2025, month=11, day=10, commodity_code=100,
+        min_price=1500, max_price=2600  # ignored if your model doesn't include them
+    )
+    print(f"Predicted Modal Price: ₹{price:,.0f}")
