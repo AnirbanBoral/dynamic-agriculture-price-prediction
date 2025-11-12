@@ -24,13 +24,10 @@ OUTPUTS_DIR = "Outputs"
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-# Include Min_Price / Max_Price as features? Set False if you won't know them at inference time.
 USE_MIN_MAX = True 
 
-# Use Linear Regression for small datasets (rows < threshold); else use XGBoost
 LR_FALLBACK_THRESHOLD = 3000
 
-# Minimum rows required after cleaning to train
 MIN_ROWS = 500
 
 # -------------- HELPERS -----------------

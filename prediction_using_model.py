@@ -9,7 +9,6 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
-# 1) Put the helper near the top
 def load_model_for_region(state: str, district: str):
     """
     Returns the appropriate trained model bundle (.joblib).
@@ -27,7 +26,6 @@ def load_model_for_region(state: str, district: str):
         raise FileNotFoundError(f"Model not found: {path}")
     return joblib.load(path)
 
-# 2) Simple predict function using the loaded bundle
 def predict_modal_price(state, district, market, commodity, variety, grade,
                         year, month, day, commodity_code, min_price=None, max_price=None):
     bundle = load_model_for_region(state, district)
@@ -36,7 +34,6 @@ def predict_modal_price(state, district, market, commodity, variety, grade,
     categorical_cols = bundle["categorical_cols"]
     numeric_cols = bundle["numeric_cols"]
 
-    # Build one-row DataFrame in the same order/columns
     row = {
         "State": state, "District": district, "Market": market,
         "Commodity": commodity, "Variety": variety, "Grade": grade,
@@ -56,12 +53,11 @@ def predict_modal_price(state, district, market, commodity, variety, grade,
     pred = model.predict(X)[0]
     return float(pred)
 
-# 3) Example usage
 if __name__ == "__main__":
     price = predict_modal_price(
         state="Sikkim", district="East Sikkim", market="Gangtok",
         commodity="Onion", variety="Local", grade="Grade I",
         year=2025, month=11, day=10, commodity_code=100,
-        min_price=1500, max_price=2600  # ignored if your model doesn't include them
+        min_price=1500, max_price=2600  
     )
     print(f"Predicted Modal Price: ₹{price:,.0f}")
