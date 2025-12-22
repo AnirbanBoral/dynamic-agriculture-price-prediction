@@ -17,7 +17,7 @@ This project predicts the modal price of agricultural commodities using machine 
 
 ## Features
 - Complete data preprocessing pipeline
-- ML models (XGBoost)
+- ML models (Linear Regression, XGBoost)
 - Model persistence with joblib
 - Production-ready code structure
 
